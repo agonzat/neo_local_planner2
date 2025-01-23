@@ -429,6 +429,14 @@ geometry_msgs::msg::TwistStamped NeoLocalPlanner::computeVelocityCommands(
 
   // get target position
   const tf2::Vector3 target_pos = iter_target->getOrigin();
+  geometry_msgs::msg::PointStamped target_position_msg;
+  target_position_msg.point.x = target_pos.x();
+  target_position_msg.point.y = target_pos.y();
+  target_position_msg.point.z = target_pos.z();
+  target_position_msg.header.stamp = clock_->now();
+  target_position_msg.header.frame_id = m_base_frame;
+  m_carrot_pub->publish(target_position_msg);
+
   double yaw_error = 0.0;
 
   if (m_robot_direction == 1 || is_goal_target) {
@@ -691,11 +699,13 @@ geometry_msgs::msg::TwistStamped NeoLocalPlanner::computeVelocityCommands(
 void NeoLocalPlanner::cleanup()
 {
   m_local_plan_pub.reset();
+  m_carrot_pub.reset();
 }
 
 void NeoLocalPlanner::activate()
 {
   m_local_plan_pub->on_activate();
+  m_carrot_pub->on_activate();
 
   // Add callback for dynamic parameters
   auto node = node_.lock();
@@ -708,6 +718,7 @@ void NeoLocalPlanner::activate()
 void NeoLocalPlanner::deactivate()
 {
   m_local_plan_pub->on_deactivate();
+  m_carrot_pub->on_deactivate();
   dyn_params_handler_.reset();
 }
 
@@ -964,6 +975,9 @@ void NeoLocalPlanner::configure(
     node, plugin_name_ + ".local_plan_topic", rclcpp::ParameterValue(
       "/local_plan"));
   nav2_util::declare_parameter_if_not_declared(
+    node, plugin_name_ + ".carrot_topic", rclcpp::ParameterValue(
+      "/carrot"));
+  nav2_util::declare_parameter_if_not_declared(
     node, plugin_name_ + ".local_frame", rclcpp::ParameterValue(
       "odom"));
   nav2_util::declare_parameter_if_not_declared(
@@ -1014,6 +1028,7 @@ void NeoLocalPlanner::configure(
 
   node->get_parameter(plugin_name_ + ".odom_topic", odom_topic);
   node->get_parameter(plugin_name_ + ".local_plan_topic", local_plan_topic);
+  node->get_parameter(plugin_name_ + ".carrot_topic", carrot_topic);
   node->get_parameter(plugin_name_ + ".local_frame", m_local_frame);
   node->get_parameter(plugin_name_ + ".base_frame", m_base_frame);
 
@@ -1046,6 +1061,7 @@ void NeoLocalPlanner::configure(
     rclcpp::SystemDefaultsQoS(),
     std::bind(&NeoLocalPlanner::odomCallback, this, std::placeholders::_1));
   m_local_plan_pub = node->create_publisher<nav_msgs::msg::Path>(local_plan_topic, 1);
+  m_carrot_pub = node->create_publisher<geometry_msgs::msg::PointStamped>(carrot_topic, 1);
 }
 
 void NeoLocalPlanner::odomCallback(const nav_msgs::msg::Odometry::SharedPtr msg)
