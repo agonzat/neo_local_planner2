@@ -160,6 +160,7 @@ private:
   rclcpp_lifecycle::LifecycleNode::WeakPtr node_;
   rclcpp::node_interfaces::OnSetParametersCallbackHandle::SharedPtr dyn_params_handler_;
   std::shared_ptr<rclcpp_lifecycle::LifecyclePublisher<nav_msgs::msg::Path>> m_local_plan_pub;
+  std::shared_ptr<rclcpp_lifecycle::LifecyclePublisher<geometry_msgs::msg::PointStamped>> m_carrot_pub;
 
   std::string m_global_frame = "map";
   std::string m_local_frame;
@@ -235,6 +236,7 @@ protected:
   double m_robot_direction = 1.0;
   std::string odom_topic = "odom";
   std::string local_plan_topic = "local_plan";
+  std::string carrot_topic = "carrot";
   int count = 0;
 };
 
