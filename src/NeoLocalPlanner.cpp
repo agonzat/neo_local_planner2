@@ -429,13 +429,6 @@ geometry_msgs::msg::TwistStamped NeoLocalPlanner::computeVelocityCommands(
 
   // get target position
   const tf2::Vector3 target_pos = iter_target->getOrigin();
-  geometry_msgs::msg::PointStamped target_position_msg;
-  target_position_msg.point.x = target_pos.x();
-  target_position_msg.point.y = target_pos.y();
-  target_position_msg.point.z = target_pos.z();
-  target_position_msg.header.stamp = clock_->now();
-  target_position_msg.header.frame_id = m_base_frame;
-  m_carrot_pub->publish(target_position_msg);
 
   double yaw_error = 0.0;
 
@@ -674,6 +667,18 @@ geometry_msgs::msg::TwistStamped NeoLocalPlanner::computeVelocityCommands(
       fmax(control_vel_x, min_vel_x),
       max_vel_x);
   }
+
+  size_t idx = 0;
+  if (m_state == state_t::STATE_TRANSLATING && !is_goal_target) idx = local_path.poses.size()/3;
+  const auto carrot_pos = local_path.poses.at(idx).pose.position;
+  const auto frame_id = local_path.poses.at(idx).header.frame_id;
+  geometry_msgs::msg::PointStamped carrot_position_msg;
+  carrot_position_msg.point.x = carrot_pos.x;
+  carrot_position_msg.point.y = carrot_pos.y;
+  carrot_position_msg.point.z = carrot_pos.z;
+  carrot_position_msg.header.stamp = clock_->now();
+  carrot_position_msg.header.frame_id = frame_id;
+  m_carrot_pub->publish(carrot_position_msg);
 
   cmd_vel.linear.y = fmin(fmax(control_vel_y, min_vel_y), max_vel_y);
   cmd_vel.linear.z = 0;
