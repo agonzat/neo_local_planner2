@@ -173,7 +173,8 @@ private:
     STATE_ROTATING,
     STATE_ADJUSTING,
     STATE_TURNING,
-    STATE_STUCK
+    STATE_STUCK,
+    STATE_ALIGNING
   };
 
   state_t m_state = state_t::STATE_IDLE;
@@ -185,6 +186,7 @@ private:
   uint64_t m_update_counter = 0;
   double m_last_control_values[3] = {};
   geometry_msgs::msg::Twist m_last_cmd_vel;
+  double m_plan_length = 0.0;
 
 protected:
   double acc_lim_x = 0;
@@ -234,6 +236,8 @@ protected:
   bool m_reset_lastvel = false;
   bool m_allow_reversing = false;
   double m_robot_direction = 1.0;
+  bool m_orient_to_goal_enabled = false;
+  double m_orient_to_goal_dist = 0.0;
   std::string odom_topic = "odom";
   std::string local_plan_topic = "local_plan";
   std::string carrot_topic = "carrot";
