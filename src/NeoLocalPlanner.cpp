@@ -573,9 +573,31 @@ geometry_msgs::msg::TwistStamped NeoLocalPlanner::computeVelocityCommands(
     // simply correct y with holonomic drive
     control_vel_y = pos_error.y() * pos_y_gain;
 
+    // when enabled and the whole route we were given is short, orient
+    // towards the goal heading first and only then approach it with full
+    // holonomic motion, for the entire route (not just near the end).
+    // longer routes keep the normal simultaneous translate+rotate behavior.
+    // this always compares against the actual final goal orientation,
+    // independent of max_goal_dist / is_goal_target.
+    const double goal_yaw = tf2::getYaw(local_plan.back().getRotation());
+    const double goal_yaw_error = angles::shortest_angular_distance(actual_yaw, goal_yaw);
+
+    const bool should_orient_to_goal = m_orient_to_goal_enabled &&
+      m_plan_length < m_orient_to_goal_dist;
+    const bool is_aligning_to_goal = should_orient_to_goal &&
+      fabs(goal_yaw_error) > (m_state == state_t::STATE_ALIGNING ? 0.5 * yaw_goal_tolerance :
+      yaw_goal_tolerance);
+
     if (m_state == state_t::STATE_TURNING) {
       // continue on current yawrate
       control_yawrate = (start_yawrate > 0 ? 1 : -1) * max_rot_vel;
+    } else if (is_aligning_to_goal) {
+      // rotate in place towards the goal orientation, hold position
+      control_vel_x = 0;
+      control_vel_y = 0;
+      control_yawrate = goal_yaw_error * static_yaw_gain;
+
+      m_state = state_t::STATE_ALIGNING;
     } else {
       // use term for static target orientation
       control_yawrate = yaw_error * static_yaw_gain;
@@ -600,6 +622,12 @@ geometry_msgs::msg::TwistStamped NeoLocalPlanner::computeVelocityCommands(
     // apply yaw cost term when not approaching goal
     if (!is_goal_target) {
       control_yawrate -= delta_cost_yaw * cost_yaw_gain;
+    }
+
+    // keep the robot strictly in place while aligning to the goal heading
+    if (m_state == state_t::STATE_ALIGNING) {
+      control_vel_x = 0;
+      control_vel_y = 0;
     }
   }
   // check if we are stuck
@@ -811,6 +839,12 @@ NeoLocalPlanner::dynamicParametersCallback(
         min_stop_dist = parameter.as_double();
       } else if (param_name == plugin_name_ + ".emergency_acc_lim_x") {
         emergency_acc_lim_x = parameter.as_double();
+      } else if (param_name == plugin_name_ + ".orient_to_goal_distance") {
+        m_orient_to_goal_dist = parameter.as_double();
+      }
+    } else if (param_type == ParameterType::PARAMETER_BOOL) {
+      if (param_name == plugin_name_ + ".enable_orient_to_goal") {
+        m_orient_to_goal_enabled = parameter.as_bool();
       }
     }
   }
@@ -838,6 +872,18 @@ void NeoLocalPlanner::setPlan(const nav_msgs::msg::Path & plan)
 {
   m_reset_lastvel = reset_lastvel(m_global_plan, plan);
   m_global_plan = plan;
+
+  // total length of the route just received, used to decide (once, for the
+  // whole route) whether it counts as a "short" path that should be
+  // approached by orienting to the goal first, see orient_to_goal_distance
+  m_plan_length = 0.0;
+  for (size_t i = 1; i < plan.poses.size(); ++i) {
+    const auto & p0 = plan.poses[i - 1].pose.position;
+    const auto & p1 = plan.poses[i].pose.position;
+    const double dx = p1.x - p0.x;
+    const double dy = p1.y - p0.y;
+    m_plan_length += sqrt(dx * dx + dy * dy);
+  }
 }
 
 void NeoLocalPlanner::setSpeedLimit(
@@ -974,6 +1020,12 @@ void NeoLocalPlanner::configure(
     node, plugin_name_ + ".allow_reversing", rclcpp::ParameterValue(
       false));
   nav2_util::declare_parameter_if_not_declared(
+    node, plugin_name_ + ".enable_orient_to_goal", rclcpp::ParameterValue(
+      false));
+  nav2_util::declare_parameter_if_not_declared(
+    node, plugin_name_ + ".orient_to_goal_distance", rclcpp::ParameterValue(
+      0.0));
+  nav2_util::declare_parameter_if_not_declared(
     node, plugin_name_ + ".odom_topic", rclcpp::ParameterValue(
       "/odom"));
   nav2_util::declare_parameter_if_not_declared(
@@ -1030,6 +1082,8 @@ void NeoLocalPlanner::configure(
   node->get_parameter_or(plugin_name_ + ".emergency_acc_lim_x", emergency_acc_lim_x, 0.5);
   node->get_parameter_or(plugin_name_ + ".differential_drive", differential_drive, true);
   node->get_parameter_or(plugin_name_ + ".allow_reversing", m_allow_reversing, false);
+  node->get_parameter_or(plugin_name_ + ".enable_orient_to_goal", m_orient_to_goal_enabled, false);
+  node->get_parameter_or(plugin_name_ + ".orient_to_goal_distance", m_orient_to_goal_dist, 0.0);
 
   node->get_parameter(plugin_name_ + ".odom_topic", odom_topic);
   node->get_parameter(plugin_name_ + ".local_plan_topic", local_plan_topic);
